@@ -55,8 +55,8 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "atelier-plugin-api"
-version = "0.3.0"
-source = "git+https://github.com/atelier-ide-org/api?tag=v0.3.0#2eda5a4188f5a3dfb35d72d3e71703c7dbfe11ef"
+version = "0.4.0"
+source = "git+https://github.com/atelier-ide-org/api?tag=v0.4.0#2ae1a88c979e81bae1df94aba71be39a72613cc8"
 dependencies = [
  "egui",
  "serde",
@@ -478,7 +478,7 @@ dependencies = [
 
 [[package]]
 name = "msoffice-viewer"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "atelier-plugin-api",

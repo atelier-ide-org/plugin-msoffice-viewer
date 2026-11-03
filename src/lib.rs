@@ -1194,15 +1194,15 @@ impl MsOfficeViewerPlugin {
 const FILE_ICONS: [(&str, &str); 3] = [
     (
         "docx+docm+dotx+dotm+doc",
-        include_str!("../icons/docx+docm+dotx+dotm+doc.svg"),
+        include_str!("../extensions/docx+docm+dotx+dotm+doc.svg"),
     ),
     (
         "xlsx+xlsm+xltx+xltm+xls",
-        include_str!("../icons/xlsx+xlsm+xltx+xltm+xls.svg"),
+        include_str!("../extensions/xlsx+xlsm+xltx+xltm+xls.svg"),
     ),
     (
         "pptx+pptm+potx+potm+ppsx+ppsm+ppt+pps",
-        include_str!("../icons/pptx+pptm+potx+potm+ppsx+ppsm+ppt+pps.svg"),
+        include_str!("../extensions/pptx+pptm+potx+potm+ppsx+ppsm+ppt+pps.svg"),
     ),
 ];
 
