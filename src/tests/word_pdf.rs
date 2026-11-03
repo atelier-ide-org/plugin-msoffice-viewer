@@ -1,6 +1,6 @@
 use super::*;
-use crate::plugins::builtins::msoffice::{Cell, Inline};
-use eframe::egui::{Align, Color32};
+use crate::{Cell, Inline};
+use atelier_plugin_api::egui::{Align, Color32};
 
 fn text_para(text: &str) -> Block {
     Block::Para(Para {

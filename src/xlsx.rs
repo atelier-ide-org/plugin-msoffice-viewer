@@ -8,9 +8,11 @@ use super::{
     read_part,
 };
 use crate::i18n::Text;
-use crate::ui;
 use anyhow::{Context as _, Result, anyhow, bail};
-use eframe::egui::{self, Align, Color32, FontId, Layout, RichText, Stroke, StrokeKind, vec2};
+use atelier_plugin_api::egui::{
+    self, Align, Color32, FontId, Layout, RichText, Stroke, StrokeKind, vec2,
+};
+use atelier_plugin_api::ui;
 use egui_extras::{Column, TableBuilder};
 use quick_xml::{
     Reader,
@@ -1249,5 +1251,5 @@ pub fn export_pdf(wb: &Workbook, target: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-#[path = "../../../../test/plugins/builtins/msoffice/xlsx/tests.rs"]
+#[path = "tests/xlsx.rs"]
 mod tests;

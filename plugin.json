@@ -1,0 +1,8 @@
+{
+  "id": "msoffice-viewer",
+  "name": "Microsoft Office",
+  "version": "0.3.0",
+  "description": "Word, Excel and PowerPoint documents read without an office suite, and exported to PDF.",
+  "library": "msoffice_viewer",
+  "abi": 2
+}

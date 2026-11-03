@@ -2,7 +2,7 @@
 //! ellipses, lines, clipping and images, on pages measured in points. The origin of every
 //! coordinate is the top left corner of the page, `y` growing downwards.
 
-use eframe::egui::{Align, Color32};
+use atelier_plugin_api::egui::{Align, Color32};
 use flate2::{Compression, write::ZlibEncoder};
 use std::io::Write;
 
@@ -774,5 +774,5 @@ pub fn flow(items: &[Inl], width: f32, default_size: f32) -> Vec<Line> {
 }
 
 #[cfg(test)]
-#[path = "../../../../test/plugins/builtins/msoffice/pdf/tests.rs"]
+#[path = "tests/pdf.rs"]
 mod tests;

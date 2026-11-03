@@ -7,12 +7,12 @@ use super::{
     pdf::{Font, Inl, Pdf, Span, flow},
     read_part,
 };
-use crate::ui;
 use anyhow::{Context as _, Result, anyhow, bail};
-use eframe::egui::{
+use atelier_plugin_api::egui::{
     self, Align, Color32, CornerRadius, FontId, Painter, Pos2, Rect, Shape, Stroke, StrokeKind,
     TextFormat, Vec2, pos2, text::LayoutJob, vec2,
 };
+use atelier_plugin_api::ui;
 use std::{collections::HashMap, fs, path::Path};
 
 const EMU_PT: f32 = 12700.0;
@@ -1506,5 +1506,5 @@ pub fn export_pdf(deck: &Deck, target: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-#[path = "../../../../test/plugins/builtins/msoffice/pptx/tests.rs"]
+#[path = "tests/pptx.rs"]
 mod tests;

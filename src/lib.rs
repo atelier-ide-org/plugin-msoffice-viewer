@@ -1,24 +1,23 @@
-//! MSOfficeViewer built-in plugin: Microsoft Office documents open in a read-only viewer, and
+//! Microsoft Office viewer, a native plugin of Atelier: Microsoft Office documents open in a read-only viewer, and
 //! export to PDF. Word (`.docx`) documents are drawn as a page, with headings, character
 //! formatting, lists, links, tables and images; Excel workbooks (`.xlsx`) as a grid with one tab
 //! per sheet (`xlsx`); PowerPoint presentations (`.pptx`) as a column of slides (`pptx`). These
 //! formats are zips of XML files, read here without any office suite, so the plugin behaves the
 //! same on every OS. The PDF files are written by `pdf`, with no external tool.
 
+#[macro_use]
+mod i18n;
 mod pdf;
 mod pptx;
 mod word_pdf;
 mod xlsx;
 
-use crate::{
-    plugins::builtin::{BuiltinPlugin, Command, EditorLayout, Host},
-    ui,
-};
 use anyhow::{Context as _, Result, anyhow, bail};
-use eframe::egui::{
+use atelier_plugin_api::egui::{
     self, Align, Color32, ColorImage, FontId, Layout, RichText, Shape, Stroke, StrokeKind,
     TextFormat, TextureHandle, TextureOptions, text::LayoutJob, vec2,
 };
+use atelier_plugin_api::{Host, Plugin, Surface, protocol, ui};
 use quick_xml::{Reader, events::Event};
 use std::{
     collections::HashMap,
@@ -1162,6 +1161,10 @@ impl Default for MsOfficeViewerPlugin {
 }
 
 impl MsOfficeViewerPlugin {
+    pub fn opens_binary(&self, path: &Path) -> bool {
+        is_office(path)
+    }
+
     /// Asks where to save, then writes the PDF. The outcome is kept in `message` and returned.
     fn export(&mut self, path: &Path) -> Option<String> {
         let stem = path
@@ -1187,64 +1190,82 @@ impl MsOfficeViewerPlugin {
     }
 }
 
-impl BuiltinPlugin for MsOfficeViewerPlugin {
-    fn file_closed(&mut self, _ctx: &egui::Context, path: &Path) {
+/// The icons of the documents, and the extensions each one covers.
+const FILE_ICONS: [(&str, &str); 3] = [
+    (
+        "docx+docm+dotx+dotm+doc",
+        include_str!("../icons/docx+docm+dotx+dotm+doc.svg"),
+    ),
+    (
+        "xlsx+xlsm+xltx+xltm+xls",
+        include_str!("../icons/xlsx+xlsm+xltx+xltm+xls.svg"),
+    ),
+    (
+        "pptx+pptm+potx+potm+ppsx+ppsm+ppt+pps",
+        include_str!("../icons/pptx+pptm+potx+potm+ppsx+ppsm+ppt+pps.svg"),
+    ),
+];
+
+atelier_plugin_api::export_plugin!(MsOfficeViewerPlugin::default);
+
+impl Plugin for MsOfficeViewerPlugin {
+    fn info(&mut self, language: &str) -> protocol::Info {
+        i18n::set_language(language);
+        protocol::Info {
+            commands: vec![protocol::Command {
+                id: "msoffice.pdf".into(),
+                label: tr!("msoffice.msoffice_export_document_as_pdf").into(),
+            }],
+            file_types: FILE_ICONS
+                .iter()
+                .map(|(extensions, _)| protocol::FileType {
+                    extensions: extensions.split('+').map(str::to_string).collect(),
+                    layout: protocol::Layout::Preview,
+                    binary: true,
+                    layout_switch: false,
+                    icon: Some(extensions.to_string()),
+                })
+                .collect(),
+            icons: FILE_ICONS
+                .iter()
+                .map(|(name, svg)| protocol::Icon {
+                    name: name.to_string(),
+                    svg: svg.to_string(),
+                    svg_dark: None,
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    fn file_closed(&mut self, path: &Path) {
         self.loaded.remove(path);
     }
-    fn id(&self) -> &'static str {
-        "msofficeviewer"
-    }
-    fn name(&self) -> &'static str {
-        tr!("plugin.msoffice.name")
-    }
-    fn description(&self) -> &'static str {
-        tr!("plugin.msoffice.summary")
-    }
-    fn icon(&self) -> &'static str {
-        crate::plugins::builtin::card_icon("msoffice")
-    }
-    fn extensions_dir(&self) -> Option<&'static str> {
-        Some("msoffice")
-    }
 
-    fn commands(&self) -> Vec<Command> {
-        vec![Command {
-            id: "msoffice.pdf",
-            label: tr!("msoffice.msoffice_export_document_as_pdf").into(),
-        }]
-    }
-
-    fn run_command(&mut self, id: &str, host: &mut dyn Host) {
+    fn run_command(&mut self, id: &str, host: &Host) {
         if id != "msoffice.pdf" {
             return;
         }
-        match host.active_file().filter(|p| is_office(p)) {
+        match host.project().active_file.filter(|p| is_office(p)) {
             Some(path) => {
                 if let Some(text) = self.export(&path) {
                     host.notify(text);
                 }
             }
-            None => host.notify(tr!("msoffice.open_word_excel_powerpoint_document").into()),
+            None => host.notify(tr!("msoffice.open_word_excel_powerpoint_document")),
         }
     }
 
-    fn opens_binary(&self, path: &Path) -> bool {
-        is_office(path)
+    fn ui(&mut self, ui: &mut egui::Ui, surface: Surface<'_>, _host: &Host) {
+        if let Surface::Preview(path) = surface {
+            i18n::set_language(&ui::language(ui.ctx()));
+            self.preview(ui, path);
+        }
     }
-    fn editor_layout(&self, path: &Path) -> Option<EditorLayout> {
-        is_office(path).then_some(EditorLayout::Preview)
-    }
-    fn layout_switch(&self, _path: &Path) -> bool {
-        false
-    }
+}
 
-    fn preview(
-        &mut self,
-        ui: &mut egui::Ui,
-        path: &Path,
-        _text: &mut String,
-        _scroll: Option<f32>,
-    ) {
+impl MsOfficeViewerPlugin {
+    fn preview(&mut self, ui: &mut egui::Ui, path: &Path) {
         let t = ui::theme(ui.ctx());
         let modified = fs::metadata(path).and_then(|m| m.modified()).ok();
         if self.loaded.get(path).is_none_or(|l| l.modified != modified) {
@@ -1414,5 +1435,5 @@ impl BuiltinPlugin for MsOfficeViewerPlugin {
 }
 
 #[cfg(test)]
-#[path = "../../../../test/plugins/builtins/msoffice/mod/tests.rs"]
+#[path = "tests/lib.rs"]
 mod tests;

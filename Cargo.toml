@@ -1,0 +1,32 @@
+[package]
+name = "msoffice-viewer"
+version = "0.3.0"
+edition = "2024"
+license = "MIT"
+description = "Microsoft Office viewer for Atelier: Word, Excel and PowerPoint documents, and their export to PDF"
+repository = "https://github.com/atelier-ide-org/plugin-msoffice-viewer"
+publish = false
+
+[lib]
+# A dynamic library the IDE loads (`msoffice_viewer.dll`, `libmsoffice_viewer.so`…), and an
+# ordinary one for the tests.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+atelier-plugin-api = { git = "https://github.com/atelier-ide-org/api", tag = "v0.3.0" }
+egui_extras = { version = "0.33", default-features = false }
+anyhow = "1"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+flate2 = "1"
+quick-xml = "0.37"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
+# Where to save a PDF.
+rfd = "0.17"
+
+# A workspace of its own: it builds alone, against the interface only (also as the submodule
+# `plugins/msoffice-viewer` of the IDE).
+[workspace]
+
+[profile.release]
+lto = "thin"
+strip = true

@@ -1,0 +1,145 @@
+name: Release
+
+# Publishes the plugin in atelier-ide-org/releases as the release `plugins/msoffice-viewer/vX.Y.Z`, X.Y.Z
+# being the version of its Cargo.toml: `msoffice-viewer.atelier-plugin` (the manifest and the library of
+# each system), its `plugin.json` (what the IDE lists in Plugins, Available) and
+# `msoffice-viewer-SHA256SUMS`. It is never the "latest" release of the repository: that one is the IDE's.
+#
+# The plugin is built alone, against the plugin interface (atelier-ide-org/api): it loads in every
+# version of Atelier that reads the version of the interface its `plugin.json` gives (`abi`).
+#
+# On every push to main whose version has no release yet: raising the version releases it.
+# Started by hand, it builds the version of main again and replaces the files of its release.
+#
+# Secret (of the organization): ATELIER_RELEASES writes the releases of atelier-ide-org/releases.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  PLUGIN: msoffice-viewer
+  LIBRARY: msoffice_viewer
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BY_HAND: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          version="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          if [ "$BY_HAND" != true ] && gh release view "plugins/$PLUGIN/$version" --repo atelier-ide-org/releases > /dev/null 2>&1; then
+            echo "$PLUGIN $version is already released."
+            exit 0
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: find
+    if: needs.find.outputs.version != ''
+    name: build (${{ matrix.os_name }}-${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, target: x86_64-pc-windows-msvc, os_name: windows, arch: x86_64 }
+          - { runner: ubuntu-latest, target: x86_64-unknown-linux-gnu, os_name: linux, arch: x86_64 }
+          - { runner: macos-latest, target: aarch64-apple-darwin, os_name: macos, arch: aarch64 }
+          - { runner: macos-latest, target: x86_64-apple-darwin, os_name: macos, arch: x86_64 }
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Package
+        # The library of this system, in the folder the IDE looks in: `<os>-<arch>/`.
+        run: |
+          case "${{ matrix.os_name }}" in
+            windows) file="$LIBRARY.dll" ;;
+            macos) file="lib$LIBRARY.dylib" ;;
+            *) file="lib$LIBRARY.so" ;;
+          esac
+          dir="dist/${{ matrix.os_name }}-${{ matrix.arch }}"
+          mkdir -p "$dir"
+          cp "target/${{ matrix.target }}/release/$file" "$dir/"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.PLUGIN }}-${{ matrix.os_name }}-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [find, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: plugin
+      - uses: actions/download-artifact@v8
+        with:
+          path: stage
+          merge-multiple: true
+      # One file for every system, and the manifest alone for the list of the IDE.
+      - name: Package
+        env:
+          VERSION: ${{ needs.find.outputs.version }}
+        run: |
+          jq --arg v "${VERSION#v}" '.version = $v' plugin/plugin.json > stage/plugin.json
+          mkdir -p dist
+          (cd stage && zip -r "../dist/$PLUGIN.atelier-plugin" .)
+          cp stage/plugin.json dist/plugin.json
+          unzip -l "dist/$PLUGIN.atelier-plugin"
+          (cd dist && sha256sum "$PLUGIN.atelier-plugin" plugin.json > "$PLUGIN-SHA256SUMS" && cat "$PLUGIN-SHA256SUMS")
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.ATELIER_RELEASES }}
+          VERSION: ${{ needs.find.outputs.version }}
+        run: |
+          tag="plugins/$PLUGIN/$VERSION"
+          name="$(jq -r .name dist/plugin.json)"
+          description="$(jq -r .description dist/plugin.json)"
+          abi="$(jq -r .abi dist/plugin.json)"
+          cd dist
+          if gh release view "$tag" --repo atelier-ide-org/releases > /dev/null 2>&1; then
+            gh release upload "$tag" ./* --clobber --repo atelier-ide-org/releases
+            exit 0
+          fi
+          printf '%s\n' \
+            "$description" \
+            "" \
+            "Install it from Atelier (0.3 or later): open **Plugins**, then **Available**. Or download \`$PLUGIN.atelier-plugin\` and, in **Plugins**, click **Install a plugin from a file** (the + button). It is installed once, for every project." \
+            "" \
+            "Plugin interface v$abi: it loads in every version of Atelier that reads it." \
+            > ../notes.md
+          gh release create "$tag" ./* --repo atelier-ide-org/releases --latest=false \
+            --title "$name ${VERSION#v}" --notes-file ../notes.md

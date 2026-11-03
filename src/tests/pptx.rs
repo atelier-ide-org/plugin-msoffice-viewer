@@ -194,7 +194,7 @@ fn exports_and_renders_slides() {
 
     let ctx = egui::Context::default();
     egui_extras::install_image_loaders(&ctx);
-    ui::install(&ctx, ui::theme_by_index(0), 14.0);
+    ui::install(&ctx);
     let mut textures = Textures::new();
     for _ in 0..2 {
         let _ = ctx.run(Default::default(), |ctx| {

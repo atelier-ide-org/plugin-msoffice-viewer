@@ -127,7 +127,7 @@ fn the_grid_renders() {
     let wb = load(&path).unwrap();
     let _ = fs::remove_file(&path);
     let ctx = egui::Context::default();
-    ui::install(&ctx, ui::theme_by_index(0), 14.0);
+    ui::install(&ctx);
     let mut state = SheetView::default();
     for _ in 0..2 {
         let _ = ctx.run(Default::default(), |ctx| {

@@ -224,5 +224,5 @@ impl Exporter<'_> {
 }
 
 #[cfg(test)]
-#[path = "../../../../test/plugins/builtins/msoffice/word_pdf/tests.rs"]
+#[path = "tests/word_pdf.rs"]
 mod tests;

@@ -184,16 +184,26 @@ fn word_files_open_in_the_viewer_and_it_renders() {
     assert!(plugin.opens_binary(&path));
     assert!(plugin.opens_binary(Path::new("x.DOCX")));
     assert!(!plugin.opens_binary(Path::new("x.txt")));
-    assert_eq!(plugin.editor_layout(&path), Some(EditorLayout::Preview));
-    assert!(!plugin.layout_switch(&path));
+    let info = plugin.info("fr_FR");
+    let word = info
+        .file_types
+        .iter()
+        .find(|t| t.extensions.iter().any(|e| e == "docx"))
+        .unwrap();
+    assert_eq!(word.layout, protocol::Layout::Preview);
+    assert!(word.binary && !word.layout_switch);
+    assert!(
+        info.icons
+            .iter()
+            .any(|i| Some(&i.name) == word.icon.as_ref())
+    );
     let ctx = egui::Context::default();
     egui_extras::install_image_loaders(&ctx);
-    ui::install(&ctx, ui::theme_by_index(0), 14.0);
-    let mut text = String::new();
+    ui::install(&ctx);
     for _ in 0..3 {
         let _ = ctx.run(Default::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                plugin.preview(ui, &path, &mut text, None);
+                plugin.preview(ui, &path);
             });
         });
     }
