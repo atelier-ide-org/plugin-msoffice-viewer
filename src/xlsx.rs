@@ -18,7 +18,7 @@ use quick_xml::{
     Reader,
     events::{BytesStart, Event},
 };
-use std::{collections::HashMap, fs, path::Path};
+use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
 const MAX_CELLS: usize = 3_000_000;
 const MAX_COLS: u32 = 1024;
@@ -493,16 +493,76 @@ pub struct CellStyle {
     fmt: NumFmt,
 }
 
+/// A cell shown. Its text is shared with the cells that show the same one (the shared strings
+/// of the workbook): a sheet of half a million cells repeating a few thousand texts kept one
+/// allocation for each cell.
 pub struct Cell {
-    pub text: String,
+    pub text: Arc<str>,
     pub align: Align,
-    pub style: usize,
+    /// Index in [`Workbook::styles`].
+    pub style: u32,
+}
+
+/// The cells of a sheet by (row, column), sorted: a map of half a million cells took half as
+/// much again for its empty slots.
+#[derive(Default)]
+pub struct Cells {
+    entries: Vec<((u32, u32), Cell)>,
+    /// Whether `entries` was pushed to out of order since it was last sorted.
+    unsorted: bool,
+}
+
+impl Cells {
+    pub fn get(&self, at: &(u32, u32)) -> Option<&Cell> {
+        debug_assert!(!self.unsorted, "cells read before `finish`");
+        self.entries
+            .binary_search_by_key(at, |(k, _)| *k)
+            .ok()
+            .map(|i| &self.entries[i].1)
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Adds a cell while the sheet is read; the last one given for a place wins.
+    fn insert(&mut self, at: (u32, u32), cell: Cell) {
+        if self.entries.last().is_some_and(|(k, _)| *k >= at) {
+            self.unsorted = true;
+        }
+        self.entries.push((at, cell));
+    }
+
+    /// Once the sheet is read: sorted, one cell a place, no spare room.
+    fn finish(&mut self) {
+        if self.unsorted {
+            // Stable: of the cells of a place, the last given stays last, and is the one kept.
+            self.entries.sort_by_key(|(k, _)| *k);
+            let mut kept: Vec<((u32, u32), Cell)> = Vec::with_capacity(self.entries.len());
+            for entry in self.entries.drain(..) {
+                match kept.last_mut() {
+                    Some(last) if last.0 == entry.0 => *last = entry,
+                    _ => kept.push(entry),
+                }
+            }
+            self.entries = kept;
+            self.unsorted = false;
+        }
+        self.entries.shrink_to_fit();
+    }
+}
+
+impl std::ops::Index<&(u32, u32)> for Cells {
+    type Output = Cell;
+    fn index(&self, at: &(u32, u32)) -> &Cell {
+        self.get(at).expect("no cell there")
+    }
 }
 
 #[derive(Default)]
 pub struct Sheet {
     pub name: String,
-    pub cells: HashMap<(u32, u32), Cell>,
+    pub cells: Cells,
     pub rows: u32,
     pub cols: u32,
     /// Width of each column in pixels, 0 for a hidden one.
@@ -517,7 +577,7 @@ pub struct Workbook {
 
 impl Workbook {
     pub fn style(&self, cell: &Cell) -> &CellStyle {
-        &self.styles[cell.style.min(self.styles.len() - 1)]
+        &self.styles[(cell.style as usize).min(self.styles.len() - 1)]
     }
     pub fn cell_count(&self) -> usize {
         self.sheets.iter().map(|s| s.cells.len()).sum()
@@ -741,7 +801,7 @@ fn read_shared_strings(bytes: &[u8]) -> Result<Vec<String>> {
 fn parse_sheet(
     name: String,
     bytes: &[u8],
-    strings: &[String],
+    strings: &[Arc<str>],
     styles: &[CellStyle],
 ) -> Result<Sheet> {
     let mut sheet = Sheet {
@@ -757,47 +817,54 @@ fn parse_sheet(
     let (mut in_v, mut in_t, mut phonetic) = (false, false, 0usize);
     let mut column_defs: Vec<(u32, u32, f32, bool)> = Vec::new();
 
-    let finish = |sheet: &mut Sheet, cell: ((u32, u32), String, usize, String, String)| {
+    // The texts made here (numbers as shown, VRAI, FAUX…), each once: a column of zeros was as
+    // many allocations as cells.
+    let mut made: HashMap<String, Arc<str>> = HashMap::new();
+    let mut intern = |text: String| -> Arc<str> {
+        if let Some(shared) = made.get(&text) {
+            return shared.clone();
+        }
+        let shared: Arc<str> = Arc::from(text.as_str());
+        made.insert(text, shared.clone());
+        shared
+    };
+    let mut finish = |sheet: &mut Sheet, cell: ((u32, u32), String, usize, String, String)| {
         let ((r, c), kind, style_index, value, inline) = cell;
         if c >= MAX_COLS {
             return;
         }
         let style = styles.get(style_index).or(styles.first());
         let mut align = Align::Min;
-        let text = match kind.as_str() {
+        let text: Arc<str> = match kind.as_str() {
             "s" => value
                 .trim()
                 .parse::<usize>()
                 .ok()
                 .and_then(|i| strings.get(i))
                 .cloned()
-                .unwrap_or_default(),
+                .unwrap_or_else(|| Arc::from("")),
             "inlineStr" => {
                 if inline.is_empty() {
-                    value
+                    intern(value)
                 } else {
-                    inline
+                    intern(inline)
                 }
             }
-            "str" | "d" => value,
+            "str" | "d" => intern(value),
             "e" => {
                 align = Align::Center;
-                value
+                intern(value)
             }
             "b" => {
                 align = Align::Center;
-                if value.trim() == "1" {
-                    "VRAI".into()
-                } else {
-                    "FAUX".into()
-                }
+                intern(if value.trim() == "1" { "VRAI" } else { "FAUX" }.into())
             }
             _ => match value.trim().parse::<f64>() {
                 Ok(v) => {
                     align = Align::Max;
-                    style.map_or_else(|| general(v), |s| format_value(&s.fmt, v))
+                    intern(style.map_or_else(|| general(v), |s| format_value(&s.fmt, v)))
                 }
-                Err(_) => value,
+                Err(_) => intern(value),
             },
         };
         if let Some(forced) = style.and_then(|s| s.align) {
@@ -817,7 +884,7 @@ fn parse_sheet(
             Cell {
                 text,
                 align,
-                style: style_index,
+                style: style_index as u32,
             },
         );
     };
@@ -905,6 +972,7 @@ fn parse_sheet(
             }
         }
     }
+    sheet.cells.finish();
     Ok(sheet)
 }
 
@@ -950,6 +1018,7 @@ pub fn load(path: &Path) -> Result<Workbook> {
         Some(bytes) => read_shared_strings(&bytes).unwrap_or_default(),
         None => Vec::new(),
     };
+    let strings: Vec<Arc<str>> = strings.into_iter().map(Arc::from).collect();
     let mut sheets = Vec::new();
     let listed = workbook
         .child("sheets")

@@ -3,7 +3,8 @@
 //! colors and pictures follow the file; effects, animations and charts are not drawn.
 
 use super::{
-    INK, MAX_FILE, MAX_IMAGES_TOTAL, Node, Textures, decode_image, hex_color, lum, parse_xml,
+    INK, MAX_FILE, MAX_IMAGES_TOTAL, Node, Textures, decodable, decode_image, hex_color, lum,
+    parse_xml,
     pdf::{Font, Inl, Pdf, Span, flow},
     read_part,
 };
@@ -1025,6 +1026,7 @@ pub fn load(path: &Path) -> Result<Deck> {
             if let Item::Image { name, .. } = item
                 && !media.contains_key(name)
                 && let Some(data) = read_part(&mut zip, name)?
+                && decodable(&data)
             {
                 total += data.len();
                 if total > MAX_IMAGES_TOTAL {
