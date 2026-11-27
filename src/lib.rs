@@ -793,7 +793,9 @@ fn load_doc(path: &Path) -> Result<Doc> {
         } else {
             format!("word/{target}")
         };
-        if let Some(data) = read_part(&mut zip, &name)? {
+        if let Some(data) = read_part(&mut zip, &name)?
+            && decodable(&data)
+        {
             total += data.len();
             if total > MAX_IMAGES_TOTAL {
                 break;
@@ -877,6 +879,13 @@ fn text_format(env: &Env, kind: Kind, format: &Format, link: bool) -> TextFormat
         },
         ..Default::default()
     }
+}
+
+/// Whether the plugin can draw a picture of these bytes. The others (EMF and WMF drawings,
+/// TIFF…) are shown as `[image]` and left out of the PDF: their bytes are not kept. A Word
+/// document of drawings kept 158 MB of EMF files it could never show.
+fn decodable(data: &[u8]) -> bool {
+    image::guess_format(data).is_ok_and(|format| format.reading_enabled())
 }
 
 fn decode_image(ctx: &egui::Context, rel: &str, data: &[u8]) -> Option<(TextureHandle, [f32; 2])> {

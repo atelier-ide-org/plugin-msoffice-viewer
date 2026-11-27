@@ -217,3 +217,39 @@ fn word_files_open_in_the_viewer_and_it_renders() {
     );
     assert!(loaded.textures["rId9"].is_some());
 }
+
+/// The start of an EMF drawing: a header record whose signature is " EMF" at byte 40.
+fn emf() -> Vec<u8> {
+    let mut out = vec![0u8; 108];
+    out[0] = 1;
+    out[4] = 108;
+    out[40..44].copy_from_slice(b" EMF");
+    out
+}
+
+#[test]
+fn pictures_the_viewer_cannot_draw_are_not_kept() {
+    assert!(decodable(&png()));
+    assert!(!decodable(&emf()), "an EMF drawing is shown as [image]");
+    let path = std::env::temp_dir().join(format!("atelier-docx-{}-emf.docx", std::process::id()));
+    let mut zip = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+    let options = zip::write::SimpleFileOptions::default();
+    let rels = RELS.replace(
+        "</Relationships>",
+        r#"<Relationship Id="rId10" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image2.emf"/></Relationships>"#,
+    );
+    for (name, data) in [
+        ("word/document.xml", DOCUMENT.as_bytes().to_vec()),
+        ("word/_rels/document.xml.rels", rels.into_bytes()),
+        ("word/media/image1.png", png()),
+        ("word/media/image2.emf", emf()),
+    ] {
+        zip.start_file(name, options).unwrap();
+        zip.write_all(&data).unwrap();
+    }
+    zip.finish().unwrap();
+    let doc = load_doc(&path).unwrap();
+    let _ = fs::remove_file(&path);
+    assert!(doc.images.contains_key("rId9"), "the PNG is kept");
+    assert!(!doc.images.contains_key("rId10"), "the EMF is not");
+}

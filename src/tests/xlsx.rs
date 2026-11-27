@@ -60,7 +60,7 @@ fn reads_values_styles_and_widths() {
     assert_eq!(wb.sheets.len(), 1, "the hidden sheet is skipped");
     let sheet = &wb.sheets[0];
     assert_eq!((sheet.rows, sheet.cols), (3, 4));
-    let text = |r, c| sheet.cells[&(r, c)].text.as_str();
+    let text = |r, c| &*sheet.cells[&(r, c)].text;
     assert_eq!(text(0, 0), "Produit");
     assert_eq!(text(0, 1), "Prix HT");
     assert_eq!(text(0, 2), "caché");
@@ -136,4 +136,47 @@ fn the_grid_renders() {
             });
         });
     }
+}
+
+#[test]
+fn cells_given_out_of_order_are_found_and_the_last_of_a_place_wins() {
+    let cell = |text: &str| Cell {
+        text: Arc::from(text),
+        align: Align::Min,
+        style: 0,
+    };
+    let mut cells = Cells::default();
+    cells.insert((2, 0), cell("c"));
+    cells.insert((0, 1), cell("a"));
+    cells.insert((1, 0), cell("old"));
+    cells.insert((1, 0), cell("b"));
+    cells.finish();
+    assert_eq!(cells.len(), 3);
+    assert_eq!(&*cells[&(0, 1)].text, "a");
+    assert_eq!(&*cells[&(1, 0)].text, "b");
+    assert_eq!(&*cells[&(2, 0)].text, "c");
+    assert!(cells.get(&(0, 0)).is_none());
+}
+
+#[test]
+fn cells_showing_the_same_text_share_it() {
+    let strings: Vec<Arc<str>> = vec![Arc::from("Paris")];
+    let sheet = r#"<worksheet><sheetData>
+<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>0</v></c></row>
+<row r="2"><c r="A2"><v>0</v></c><c r="B2"><v>0</v></c></row>
+</sheetData></worksheet>"#;
+    let sheet = parse_sheet(
+        "s".into(),
+        sheet.as_bytes(),
+        &strings,
+        &[CellStyle::default()],
+    )
+    .unwrap();
+    let text = |r, c| &sheet.cells[&(r, c)].text;
+    assert!(Arc::ptr_eq(text(0, 0), text(0, 1)), "a shared string, once");
+    assert!(
+        Arc::ptr_eq(text(1, 0), text(1, 1)),
+        "a number shown the same way, once"
+    );
+    assert_eq!(&**text(1, 0), "0");
 }
